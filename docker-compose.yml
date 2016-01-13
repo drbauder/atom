@@ -1,0 +1,120 @@
+---
+
+# Action items:
+# - AtoM
+#   - Deploy worker(s)
+#   - Make sure that user sessions and local caches use memcached
+#   - php-fpm running as root so cache/ can be written, should that be avoided?
+#   - php-fpm doesn't exit gracefully (SIGING is ignored for some reason when php-fpm is invoked inside a bash script)
+#   - Check if uploads/ is working
+#   - cache/ and logs/ are mutated - put some thought here
+# - Allow nodes to scale
+#   - Nginx could use confd + consul
+#   - Elasticsearch has its own distribution system right?
+# - Data volume for Percona
+# - Mount volumes as read-only where possible.
+# - Mount uploads/ in atom services and atom-worker services.
+# - ... Kubernetes instead of Swarm once the environment is mature?
+
+# How to run:
+# 1) docker-compose up -d
+# 2) docker-compose run atom syncdb
+
+elasticsearch:
+  image: "elasticsearch:1.7"
+  command: "elasticsearch -Des.node.name=TestNode -Des.network.host=0.0.0.0"
+  expose:
+    - "9200"
+    - "9300"
+
+percona:
+  image: "percona:5.6"
+  environment:
+    - "MYSQL_ROOT_PASSWORD=my-secret-pw"
+    - "MYSQL_DATABASE=atom"
+    - "MYSQL_USER=atom"
+    - "MYSQL_PASSWORD=atom_12345"
+  expose:
+    - "3306"
+
+memcached:
+  image: "memcached"
+  command: "-p 11211 -m 128 -u memcache"
+  expose:
+    - "11211"
+
+gearmand:
+  image: "sevein/gearmand"
+  command: "--queue-type=libmemcached --libmemcached-servers=memcached:11211 --listen=0.0.0.0 --port=4730 --log-file=stderr"
+  expose:
+    - "4730"
+  links:
+    - "memcached"
+
+atom-uploads:
+  image: "tianon/true"
+  volumes:
+    - "/atom/src/uploads"
+
+nginx:
+  image: "nginx:latest"
+  links:
+    - "atom"
+  ports:
+    - "8000:80"
+    - "8001:443"
+  volumes:
+    - "./:/atom/src:ro"
+    - "./docker/services/nginx/prod.conf:/etc/nginx/nginx.conf:ro"
+  volumes_from:
+    - "atom-uploads"
+
+atom:
+  build: "./"
+  command: "php-fpm"
+  user: "root"
+  links:
+    - "gearmand"
+    - "memcached"
+    - "percona"
+    - "elasticsearch"
+  volumes:
+    - "./:/atom/src"
+  volumes_from:
+    - "atom-uploads"
+  environment:
+    - "ATOM_READ_ONLY=off"
+    - "ATOM_DEBUG_IP=192.168.1.1"
+    - "ATOM_ES_HOSTS=elasticsearch:9200"
+    - "ATOM_DB_DSN=mysql:host=percona,port=3306,charset=utf8,dbname=atom"
+    - "ATOM_DB_HOSTNAME=percona"
+    - "ATOM_DB_PORT=3306"
+    - "ATOM_DB_NAME=atom"
+    - "ATOM_DB_USERNAME=atom"
+    - "ATOM_DB_PASSWORD=atom_12345"
+    - "PHPRC=/atom/php.ini"
+
+atom-worker:
+  build: "./"
+  command: "worker"
+  user: "root"
+  links:
+    - "gearmand"
+    - "memcached"
+    - "percona"
+    - "elasticsearch"
+  volumes:
+    - "./:/atom/src"
+  volumes_from:
+    - "atom-uploads"
+  environment:
+    - "ATOM_READ_ONLY=off"
+    - "ATOM_DEBUG_IP=192.168.1.1"
+    - "ATOM_ES_HOSTS=elasticsearch:9200"
+    - "ATOM_DB_DSN=mysql:host=percona,port=3306,charset=utf8,dbname=atom"
+    - "ATOM_DB_HOSTNAME=percona"
+    - "ATOM_DB_PORT=3306"
+    - "ATOM_DB_NAME=atom"
+    - "ATOM_DB_USERNAME=atom"
+    - "ATOM_DB_PASSWORD=atom_12345"
+    - "PHPRC=/atom/php.ini"
