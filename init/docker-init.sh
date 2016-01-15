@@ -1,11 +1,14 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -e
+set -o errexit
+set -o pipefail
+set -o nounset
 
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+__dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+__file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
 
 # Populate configuration files, this is always necessary.
-php $DIR/docker-config.php
+php ${__dir}/docker-config.php
 
 case $1 in
     '')
@@ -26,6 +29,12 @@ case $1 in
         bash
         ;;
     'php-fpm')
-        php-fpm --allow-to-run-as-root -c /atom/php.ini --fpm-config /atom/fpm.ini
+        trap 'kill -INT $PID' TERM INT
+        php-fpm --nodaemonize --allow-to-run-as-root -c /atom/php.ini --fpm-config /atom/fpm.ini &
+        PID=$!
+        wait $PID
+        trap - TERM INT
+        wait $PID
+        exit $?
         ;;
 esac
