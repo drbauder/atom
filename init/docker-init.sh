@@ -18,6 +18,7 @@ case $1 in
         echo "  worker: execute worker"
         echo "  syncdb: populate database"
         exit 1
+        # exec "$@"
         ;;
     'syncdb')
         php /atom/src/symfony tools:purge --demo
@@ -26,7 +27,7 @@ case $1 in
         php -d memory_limit=-1 /atom/src/symfony jobs:worker
         ;;
     'shell')
-        bash
+        /bin/bash
         ;;
     'php-fpm')
         trap 'kill -INT $PID' TERM INT
